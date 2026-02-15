@@ -1,4 +1,4 @@
-"""RentAHuman Discord Bot — Main entry point."""
+"""RAH Discord Bot — Main entry point."""
 
 import asyncio
 import logging
@@ -6,57 +6,41 @@ import logging
 import discord
 from discord.ext import commands
 
-import config
+from config import DISCORD_BOT_TOKEN
 import db
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
-logger = logging.getLogger("rah.bot")
+log = logging.getLogger("rah")
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+EXTENSIONS = ["cogs.bounties", "cogs.subscriptions"]
 
 
-class RAHBot(commands.Bot):
-    """Custom bot class with startup hooks."""
-
-    def __init__(self) -> None:
-        intents = discord.Intents.default()
-        intents.message_content = False  # Not needed for slash commands
-        super().__init__(command_prefix="!", intents=intents)
-
-    async def setup_hook(self) -> None:
-        """Initialize database and load cogs."""
-        await db.init_db()
-        logger.info("Database initialized")
-
-        await self.load_extension("cogs.bounties")
-        await self.load_extension("cogs.subscriptions")
-        logger.info("Cogs loaded")
-
-        # Sync slash commands globally
-        await self.tree.sync()
-        logger.info("Slash commands synced")
-
-    async def on_ready(self) -> None:
-        logger.info("Logged in as %s (ID: %s)", self.user, self.user.id)
-        logger.info("Serving %d guild(s)", len(self.guilds))
-        await self.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name="RentAHuman bounties",
-            )
-        )
+@bot.event
+async def on_ready():
+    log.info("Logged in as %s (ID: %s)", bot.user, bot.user.id)
+    try:
+        synced = await bot.tree.sync()
+        log.info("Synced %d slash commands", len(synced))
+    except Exception:
+        log.exception("Failed to sync commands")
 
 
-def main() -> None:
-    if not config.DISCORD_BOT_TOKEN:
-        logger.error("DISCORD_BOT_TOKEN is not set. Check your .env file.")
-        raise SystemExit(1)
-
-    bot = RAHBot()
-    bot.run(config.DISCORD_BOT_TOKEN, log_handler=None)
+async def main():
+    await db.init_db()
+    async with bot:
+        for ext in EXTENSIONS:
+            await bot.load_extension(ext)
+            log.info("Loaded extension: %s", ext)
+        await bot.start(DISCORD_BOT_TOKEN)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
